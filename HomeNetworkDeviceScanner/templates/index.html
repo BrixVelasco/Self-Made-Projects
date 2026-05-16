@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Network Scanner</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+ 
+  body {
+    font-family: system-ui, sans-serif;
+    background: #f5f5f5;
+    color: #1a1a1a;
+    padding: 40px 24px;
+  }
+ 
+  h1 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+ 
+  .subtitle {
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 28px;
+  }
+ 
+  .net-info {
+    display: none;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    font-size: 0.82rem;
+    color: #555;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+ 
+  .net-info.visible { display: flex; }
+ 
+  .net-item strong {
+    display: block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #999;
+    margin-bottom: 2px;
+  }
+ 
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+ 
+  button {
+    background: #1a1a1a;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 20px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+ 
+  button:hover:not(:disabled) { background: #333; }
+  button:disabled { background: #aaa; cursor: not-allowed; }
+ 
+  #statusText {
+    font-size: 0.82rem;
+    color: #666;
+  }
+ 
+  #statusText.scanning { color: #1a6fba; }
+  #statusText.done     { color: #1a7a3c; }
+  #statusText.error    { color: #c0392b; }
+ 
+  .table-wrap {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+ 
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+ 
+  thead {
+    background: #f0f0f0;
+    border-bottom: 1px solid #ddd;
+  }
+ 
+  th {
+    padding: 10px 16px;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #555;
+  }
+ 
+  td {
+    padding: 11px 16px;
+    border-bottom: 1px solid #eee;
+    color: #1a1a1a;
+  }
+ 
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafafa; }
+ 
+  tr.you-row td { background: #f0faf4; }
+ 
+  .you-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    background: #d4edda;
+    color: #155724;
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+ 
+  .na { color: #aaa; }
+ 
+  .placeholder {
+    text-align: center;
+    padding: 48px 20px;
+    color: #aaa;
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+ 
+<h1>Network Scanner</h1>
+<p class="subtitle">Discovers devices on your local network using ARP</p>
+ 
+<div class="net-info" id="netInfo">
+  <div class="net-item"><strong>Interface</strong><span id="niIface">—</span></div>
+  <div class="net-item"><strong>Your IP</strong><span id="niIp">—</span></div>
+  <div class="net-item"><strong>Your MAC</strong><span id="niMac">—</span></div>
+  <div class="net-item"><strong>Subnet</strong><span id="niSubnet">—</span></div>
+</div>
+ 
+<div class="controls">
+  <button id="btnScan" onclick="startScan()">Scan Network</button>
+  <span id="statusText">Ready</span>
+</div>
+ 
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>IP Address</th>
+        <th>MAC Address</th>
+        <th>Hostname</th>
+        <th>Vendor</th>
+      </tr>
+    </thead>
+    <tbody id="resultsBody">
+      <tr><td colspan="4"><div class="placeholder">Press "Scan Network" to find devices</div></td></tr>
+    </tbody>
+  </table>
+</div>
+ 
+<script>
+  let poll = null;
+ 
+  async function startScan() {
+    document.getElementById('btnScan').disabled = true;
+    setStatus('scanning', 'Scanning...');
+    document.getElementById('resultsBody').innerHTML =
+      '<tr><td colspan="4"><div class="placeholder">Scanning your network...</div></td></tr>';
+ 
+    try {
+      await fetch('/api/scan', { method: 'POST' });
+      poll = setInterval(pollStatus, 1500);
+    } catch {
+      setStatus('error', 'Could not reach server');
+      document.getElementById('btnScan').disabled = false;
+    }
+  }
+ 
+  async function pollStatus() {
+    try {
+      const data = await (await fetch('/api/status')).json();
+ 
+      if (data.network?.iface) {
+        const ni = document.getElementById('netInfo');
+        ni.classList.add('visible');
+        document.getElementById('niIface').textContent  = data.network.iface;
+        document.getElementById('niIp').textContent     = data.network.local_ip;
+        document.getElementById('niMac').textContent    = data.network.local_mac;
+        document.getElementById('niSubnet').textContent = data.network.subnet;
+      }
+ 
+      if (data.status === 'done') {
+        clearInterval(poll);
+        document.getElementById('btnScan').disabled = false;
+        setStatus('done', `Done — ${data.devices.length} device(s) found`);
+        renderTable(data.devices);
+      } else if (data.status === 'error') {
+        clearInterval(poll);
+        document.getElementById('btnScan').disabled = false;
+        setStatus('error', 'Scan failed — run as Administrator');
+      }
+    } catch {
+      clearInterval(poll);
+      setStatus('error', 'Lost connection to server');
+      document.getElementById('btnScan').disabled = false;
+    }
+  }
+ 
+  function renderTable(devices) {
+    const tbody = document.getElementById('resultsBody');
+    if (!devices.length) {
+      tbody.innerHTML = '<tr><td colspan="4"><div class="placeholder">No devices found. Are you running as Administrator?</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = devices.map(d => `
+      <tr class="${d.is_you ? 'you-row' : ''}">
+        <td>${d.ip}${d.is_you ? '<span class="you-badge">you</span>' : ''}</td>
+        <td>${d.mac}</td>
+        <td>${d.hostname && d.hostname !== 'N/A' ? d.hostname : '<span class="na">N/A</span>'}</td>
+        <td>${d.vendor && d.vendor !== 'Unknown' ? d.vendor : '<span class="na">Unknown</span>'}</td>
+      </tr>`).join('');
+  }
+ 
+  function setStatus(type, msg) {
+    const el = document.getElementById('statusText');
+    el.className = type;
+    el.textContent = msg;
+  }
+</script>
+</body>
+</html>
